@@ -15,6 +15,7 @@ I started coding small demos to recreate things i've seen in screensavers, video
 
 
 **Notes:**
+
 -The code is all QBASIC and Quickbasic 4.5 compatible, it compiles to a .exe if you build it
 
 -The demo will run faster if you build it instead of just running it interpreted in Qbasic directly
