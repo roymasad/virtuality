@@ -9,6 +9,8 @@ Type : Archive/Nostalgia
 
 Tech : QBASIC MSDOS
 
+![](screenshot.png)
+
 
 Virtually is a collage of a dozen or so small QBASIC animation programs i did one summer as a teen in the mid 1990s
 I started coding small demos to recreate things i've seen in screensavers, video games or when testing what custom weird animations i could program using trigonomitry, which after a while i decided to put them all together.
