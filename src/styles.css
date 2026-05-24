@@ -71,7 +71,7 @@ main {
 
 .gallery-hero {
   position: relative;
-  min-height: min(70vh, 680px);
+  min-height: min(50vh, 490px);
   display: grid;
   align-items: end;
   overflow: hidden;
@@ -80,48 +80,37 @@ main {
   background: #000;
 }
 
-.gallery-hero img {
+.virtuality-loader-hero {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center top;
-  image-rendering: pixelated;
-  opacity: 0.42;
+  display: block;
 }
 
 .gallery-hero::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.62) 58%, rgba(0, 0, 0, 0.86));
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, transparent 46%, rgba(0, 0, 0, 0.76) 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.56), transparent 52%, rgba(0, 0, 0, 0.34));
 }
 
 .gallery-hero-copy {
   position: relative;
   z-index: 1;
-  width: min(760px, 100%);
-  padding: clamp(24px, 5vw, 64px);
-}
-
-.gallery-hero-copy h1 {
-  margin: 0;
-  font-family: "Courier New", monospace;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-size: clamp(48px, 8vw, 104px);
-  line-height: 0.82;
-  color: var(--green);
-  letter-spacing: 0;
-  text-transform: uppercase;
+  width: min(680px, 100%);
+  padding: clamp(18px, 3vw, 38px);
 }
 
 .gallery-hero-copy p {
   max-width: 620px;
   color: var(--muted);
   font-size: 18px;
-  line-height: 1.6;
+  line-height: 1.45;
+  margin: 0 0 16px;
 }
 
 .eyebrow {
@@ -818,8 +807,12 @@ select {
     min-height: 40px;
   }
 
-  .gallery-hero-copy h1 {
-    font-size: 56px;
+  .gallery-hero {
+    min-height: 360px;
+  }
+
+  .gallery-hero-copy {
+    padding: 18px;
   }
 
   .scene-card-actions button {

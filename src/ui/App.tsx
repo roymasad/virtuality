@@ -19,7 +19,6 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import screenshotUrl from "../../screenshot.png";
 import type { RenderMode, SceneSettings } from "../engine/types";
 import { originalSourceLines } from "../data/originalData";
 import { findScene, scenes } from "../scenes/registry";
@@ -27,6 +26,7 @@ import { defaultsFor } from "../scenes/settings";
 import { StageHost } from "./StageHost";
 import { navigate, useHashRoute } from "./useHashRoute";
 import { SettingsPanel } from "./SettingsPanel";
+import { VirtualityLoaderHero } from "./VirtualityLoaderHero";
 
 const repoUrl = "https://github.com/roymasad/virtuality";
 const macScreensaverDownloadUrl = "/downloads/Virtuality-macOS-screensaver.zip";
@@ -49,10 +49,9 @@ function Gallery() {
   return (
     <main className="gallery-page">
       <section className="gallery-hero">
-        <img src={screenshotUrl} alt="Original Virtuality DOSBox screenshot" />
+        <VirtualityLoaderHero />
         <div className="gallery-hero-copy">
           <p className="eyebrow">QBasic MSDOS archive, circa 1996</p>
-          <h1>Virtuality</h1>
           <p>Classic VGA demo scenes and modern remixes in one playable catalog.</p>
           <div className="hero-actions">
             <a className="download-cta" href={macScreensaverDownloadUrl} download>
