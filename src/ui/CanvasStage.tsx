@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { createDrawApi } from "../engine/draw";
 import type { InputState, RenderMode, SceneMeta, SceneSettings } from "../engine/types";
 
@@ -8,9 +8,36 @@ interface CanvasStageProps {
   settings: SceneSettings;
   onExit: () => void;
   onSceneAction?: (action: string) => void;
+  nativeFrameBridge?: boolean;
 }
 
-export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: CanvasStageProps) {
+declare global {
+  interface Window {
+    __VIRTUALITY_STATUS__?: {
+      error?: string;
+      frame: number;
+      height: number;
+      mode: RenderMode;
+      sceneId: string;
+      width: number;
+    };
+    __VIRTUALITY_RENDER_FRAME__?: () => {
+      ok: boolean;
+      width: number;
+      height: number;
+      cssWidth: number;
+      cssHeight: number;
+      pixelRatio: number;
+      frame: number;
+      sampleNonBlack: number;
+      sampleTotal: number;
+      dataURL: string;
+    };
+    __VIRTUALITY_STOP__?: () => void;
+  }
+}
+
+export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nativeFrameBridge = false }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneInstance = useMemo(() => scene.create(), [scene]);
   const settingsRef = useRef(settings);
@@ -26,23 +53,33 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: Ca
   modeRef.current = mode;
   actionRef.current = onSceneAction;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     let frame = 0;
     let raf = 0;
+    let fallbackTimer = 0;
     let last = performance.now();
     let lastMode = modeRef.current;
+    let lastRenderedAt = 0;
+    let stopped = false;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const updateSize = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
       const classic = modeRef.current === "classic";
-      canvas.width = classic ? 320 : Math.max(640, Math.floor(rect.width * dpr));
-      canvas.height = classic ? 200 : Math.max(400, Math.floor(rect.height * dpr));
+      // The macOS native bridge PNG-decodes every frame before drawing it.
+      // Full CSS resolution avoids blur without paying the cost of Retina-sized PNGs.
+      const dpr = nativeFrameBridge ? 1 : window.devicePixelRatio || 1;
+      let nextWidth = classic ? 320 : Math.max(640, Math.floor(rect.width * dpr));
+      let nextHeight = classic ? 200 : Math.max(400, Math.floor(rect.height * dpr));
+
+      if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
       canvas.style.imageRendering = classic ? "pixelated" : "auto";
     };
 
@@ -91,12 +128,14 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: Ca
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointerleave", onPointerUp);
 
-    const loop = (now: number) => {
+    const renderFrame = (now: number) => {
+      if (stopped) return;
       if (lastMode !== modeRef.current) {
         updateSize();
         lastMode = modeRef.current;
       }
-      const delta = Math.min(0.05, (now - last) / 1000);
+      const elapsed = (now - last) / 1000;
+      const delta = Number.isFinite(elapsed) && elapsed > 0 ? Math.min(0.05, elapsed) : 1 / 30;
       last = now;
       const draw = createDrawApi(
         ctx,
@@ -115,11 +154,72 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: Ca
         input: inputRef.current,
         action: actionRef.current,
       };
-      sceneInstance.update?.(draw, sceneContext);
-      sceneInstance.render(draw, sceneContext);
+      try {
+        sceneInstance.update?.(draw, sceneContext);
+        sceneInstance.render(draw, sceneContext);
+        window.__VIRTUALITY_STATUS__ = {
+          frame,
+          height: canvas.height,
+          mode: modeRef.current,
+          sceneId: scene.id,
+          width: canvas.width,
+        };
+      } catch (error) {
+        window.__VIRTUALITY_STATUS__ = {
+          error: error instanceof Error ? error.message : String(error),
+          frame,
+          height: canvas.height,
+          mode: modeRef.current,
+          sceneId: scene.id,
+          width: canvas.width,
+        };
+        throw error;
+      }
       inputRef.current.pointer.justPressed = false;
       frame += 1;
+      lastRenderedAt = performance.now();
+    };
+
+    const loop = (now: number) => {
+      if (stopped) return;
+      renderFrame(now);
       raf = requestAnimationFrame(loop);
+    };
+
+    const renderFrameForNative = () => {
+      updateSize();
+      renderFrame(performance.now());
+      const rect = canvas.getBoundingClientRect();
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const stride = Math.max(4, Math.floor((canvas.width * canvas.height) / 1200) * 4);
+      let sampleNonBlack = 0;
+      let sampleTotal = 0;
+
+      for (let index = 0; index < image.data.length; index += stride) {
+        sampleTotal += 1;
+        if (image.data[index] || image.data[index + 1] || image.data[index + 2]) {
+          sampleNonBlack += 1;
+        }
+      }
+
+      return {
+        ok: true,
+        width: canvas.width,
+        height: canvas.height,
+        cssWidth: Math.round(rect.width),
+        cssHeight: Math.round(rect.height),
+        pixelRatio: nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
+        frame,
+        sampleNonBlack,
+        sampleTotal,
+        dataURL: canvas.toDataURL("image/png"),
+      };
+    };
+
+    const stopNativeRendering = () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      window.clearInterval(fallbackTimer);
     };
 
     sceneInstance.init?.(createDrawApi(
@@ -138,10 +238,30 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: Ca
       input: inputRef.current,
       action: actionRef.current,
     });
-    raf = requestAnimationFrame(loop);
+    window.__VIRTUALITY_STOP__ = stopNativeRendering;
+    if (nativeFrameBridge) {
+      window.__VIRTUALITY_RENDER_FRAME__ = renderFrameForNative;
+    }
+    renderFrame(performance.now());
+    if (!nativeFrameBridge) {
+      raf = requestAnimationFrame(loop);
+      fallbackTimer = window.setInterval(() => {
+        if (performance.now() - lastRenderedAt > 120) {
+          renderFrame(performance.now());
+        }
+      }, 100);
+    }
 
     return () => {
+      stopped = true;
       cancelAnimationFrame(raf);
+      window.clearInterval(fallbackTimer);
+      if (nativeFrameBridge && window.__VIRTUALITY_RENDER_FRAME__ === renderFrameForNative) {
+        delete window.__VIRTUALITY_RENDER_FRAME__;
+      }
+      if (window.__VIRTUALITY_STOP__ === stopNativeRendering) {
+        delete window.__VIRTUALITY_STOP__;
+      }
       sceneInstance.dispose?.();
       window.removeEventListener("resize", updateSize);
       window.removeEventListener("keydown", onKeyDown);
@@ -151,7 +271,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction }: Ca
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointerleave", onPointerUp);
     };
-  }, [sceneInstance, onExit]);
+  }, [sceneInstance, onExit, nativeFrameBridge]);
 
   return (
     <canvas

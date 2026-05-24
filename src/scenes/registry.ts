@@ -99,9 +99,14 @@ export const demoScenes: SceneMeta[] = [
 ];
 
 export const scenes = [...systemScenes, ...demoScenes];
+export const screensaverScenes = scenes.filter((item) => item.id !== "intro" && item.id !== "info");
 
 export function findScene(id: string | null) {
   return scenes.find((item) => item.id === id) ?? scenes[0];
+}
+
+export function findScreensaverScene(id: string | null) {
+  return screensaverScenes.find((item) => item.id === id) ?? demoScenes[0];
 }
 
 export function findSceneByKey(key: string) {

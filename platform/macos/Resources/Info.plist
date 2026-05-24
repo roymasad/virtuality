@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>Virtuality</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.roymassaad.virtuality.screensaver</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Virtuality</string>
+	<key>CFBundleDisplayName</key>
+	<string>Virtuality</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.22</string>
+	<key>CFBundleVersion</key>
+	<string>23</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © Roy Massaad. Licensed under GPL-2.0.</string>
+	<key>NSPrincipalClass</key>
+	<string>VirtualityView</string>
+</dict>
+</plist>

@@ -41,3 +41,73 @@ I started coding small demos to recreate things i've seen in screensavers, video
 -Use keyboard ARROW KEYS to navigate main menu, space bar to select, type NUMBER then PRESS ENTER to run selected demos, ESC to Exit
 
 -The .BAS file uses custom data external files for some effects. I remember i did some custom utility programs to create those visual data files, but i don't have their code anymore
+
+## Modern remaster
+
+The browser remaster lives in `src/` and can be run with Vite.
+
+```sh
+npm install
+npm run dev
+```
+
+See [docs/screensaver.md](docs/screensaver.md) for the plan to package the remaster as downloadable macOS and Windows screensavers.
+
+## macOS screensaver
+
+The macOS screensaver host lives in `platform/macos/`. It packages the browser remaster into a native `Virtuality.saver` bundle.
+
+Build it locally:
+
+```sh
+npm install
+npm run build
+platform/macos/build.sh
+```
+
+The local build is written to:
+
+```text
+build/macos/Virtuality.saver
+```
+
+### Install from a website download
+
+If you downloaded `Virtuality.saver` or a `.zip` containing it from the website:
+
+1. If it is zipped, double-click the `.zip` to extract `Virtuality.saver`.
+2. Double-click `Virtuality.saver`.
+3. macOS will ask whether to install it.
+4. Accept the install prompt.
+5. Open macOS System Settings.
+6. Go to Screen Saver.
+7. Select Virtuality.
+8. Use Options to choose the scene, render mode, and parameters. Changes save automatically; use the in-panel X to close Options.
+9. Use Preview to test it.
+
+If you are replacing an older test build, quit System Settings first, then remove the old copy:
+
+```sh
+rm -rf "$HOME/Library/Screen Savers/Virtuality.saver"
+```
+
+If macOS still shows a black full-screen saver after replacing the bundle, quit System Settings and restart the cached screen saver helpers:
+
+```sh
+killall legacyScreenSaver "Screen Saver"
+```
+
+Then reopen System Settings and test Virtuality again. The debug log is written to `/tmp/VirtualityScreensaver.log`.
+
+Manual fallback install from Terminal:
+
+```sh
+mkdir -p "$HOME/Library/Screen Savers"
+cp -R /path/to/Virtuality.saver "$HOME/Library/Screen Savers/"
+```
+
+Remove a manually installed copy:
+
+```sh
+rm -rf "$HOME/Library/Screen Savers/Virtuality.saver"
+```
