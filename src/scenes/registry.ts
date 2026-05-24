@@ -187,7 +187,7 @@ export const demoScenes: SceneMeta[] = [
 ];
 
 export const scenes = [...systemScenes, ...demoScenes];
-export const screensaverScenes = scenes.filter((item) => item.id !== "intro" && item.id !== "info" && item.renderer === "canvas2d");
+export const screensaverScenes = scenes.filter((item) => item.id !== "intro" && item.id !== "info");
 
 export function findScene(id: string | null) {
   return scenes.find((item) => item.id === id) ?? scenes[0];

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import type { RenderMode, SceneSettings } from "../engine/types";
 import { findScreensaverScene, screensaverScenes } from "../scenes/registry";
-import { CanvasStage } from "../ui/CanvasStage";
+import { StageHost } from "../ui/StageHost";
 import {
   configForScene,
   normalizeScreensaverConfig,
@@ -111,7 +111,7 @@ function SettingsApp() {
   return (
     <main className="settings-page">
       <section className="settings-preview" aria-label="Screensaver preview">
-        <CanvasStage
+        <StageHost
           scene={scene}
           mode={config.mode}
           settings={settings}

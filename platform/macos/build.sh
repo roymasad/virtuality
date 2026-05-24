@@ -18,6 +18,7 @@ mkdir -p "$BUNDLE/Contents/Resources/web"
 
 cp "$ROOT_DIR/platform/macos/Resources/Info.plist" "$BUNDLE/Contents/Info.plist"
 cp -R "$ROOT_DIR/dist/"* "$BUNDLE/Contents/Resources/web/"
+rm -rf "$BUNDLE/Contents/Resources/web/downloads"
 
 xcrun clang \
   -fobjc-arc \

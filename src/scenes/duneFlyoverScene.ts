@@ -114,6 +114,7 @@ export class DuneFlyoverScene implements ThreeScene {
       antialias: true,
       alpha: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: Boolean(ctx.nativeFrameBridge),
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setPixelRatio(1);

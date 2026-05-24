@@ -88,6 +88,8 @@ export interface ThreeSceneContext extends SceneContext {
   width: number;
   height: number;
   pixelRatio: number;
+  nativeFrameBridge?: boolean;
+  nativeHost?: boolean;
 }
 
 export interface ThreeScene {

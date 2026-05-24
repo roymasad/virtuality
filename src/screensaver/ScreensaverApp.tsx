@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { findScreensaverScene } from "../scenes/registry";
 import { defaultsFor } from "../scenes/settings";
-import { CanvasStage } from "../ui/CanvasStage";
+import { StageHost } from "../ui/StageHost";
 import { readScreensaverConfig } from "./config";
 
 export function ScreensaverApp() {
@@ -17,7 +17,7 @@ export function ScreensaverApp() {
   return (
     <main className="screensaver-page">
       <div className="screensaver-stage">
-        <CanvasStage
+        <StageHost
           scene={scene}
           mode={config.mode}
           settings={settings}

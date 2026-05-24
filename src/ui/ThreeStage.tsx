@@ -58,6 +58,8 @@ export function ThreeStage({ scene, mode, settings, onExit, onSceneAction, nativ
         width: Math.max(1, Math.floor(rect.width)),
         height: Math.max(1, Math.floor(rect.height)),
         pixelRatio: dpr,
+        nativeFrameBridge,
+        nativeHost,
       };
     };
 
@@ -146,7 +148,54 @@ export function ThreeStage({ scene, mode, settings, onExit, onSceneAction, nativ
       raf = requestAnimationFrame(loop);
     };
 
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = 48;
+    sampleCanvas.height = 30;
+    const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+
+    const renderFrameForNative = () => {
+      renderFrame(performance.now());
+      const rect = canvas.getBoundingClientRect();
+      let sampleNonBlack = 0;
+      let sampleTotal = 0;
+
+      if (sampleContext) {
+        sampleContext.clearRect(0, 0, sampleCanvas.width, sampleCanvas.height);
+        sampleContext.drawImage(canvas, 0, 0, sampleCanvas.width, sampleCanvas.height);
+        const image = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+        for (let index = 0; index < image.data.length; index += 4) {
+          sampleTotal += 1;
+          if (image.data[index] || image.data[index + 1] || image.data[index + 2]) {
+            sampleNonBlack += 1;
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        width: canvas.width,
+        height: canvas.height,
+        cssWidth: Math.round(rect.width),
+        cssHeight: Math.round(rect.height),
+        pixelRatio: nativeHost || nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
+        frame,
+        sampleNonBlack,
+        sampleTotal,
+        dataURL: canvas.toDataURL("image/png"),
+      };
+    };
+
+    const stopNativeRendering = () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      window.clearInterval(fallbackTimer);
+    };
+
     renderFrame(performance.now());
+    window.__VIRTUALITY_STOP__ = stopNativeRendering;
+    if (nativeFrameBridge) {
+      window.__VIRTUALITY_RENDER_FRAME__ = renderFrameForNative;
+    }
     if (!nativeFrameBridge) {
       raf = requestAnimationFrame(loop);
       fallbackTimer = window.setInterval(() => {
@@ -160,6 +209,12 @@ export function ThreeStage({ scene, mode, settings, onExit, onSceneAction, nativ
       stopped = true;
       cancelAnimationFrame(raf);
       window.clearInterval(fallbackTimer);
+      if (nativeFrameBridge && window.__VIRTUALITY_RENDER_FRAME__ === renderFrameForNative) {
+        delete window.__VIRTUALITY_RENDER_FRAME__;
+      }
+      if (window.__VIRTUALITY_STOP__ === stopNativeRendering) {
+        delete window.__VIRTUALITY_STOP__;
+      }
       sceneInstance.dispose?.();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
