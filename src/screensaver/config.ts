@@ -11,6 +11,7 @@ export type ScreensaverConfig = {
 declare global {
   interface Window {
     __VIRTUALITY_CONFIG__?: Partial<ScreensaverConfig> & {
+      nativeHost?: boolean;
       nativeFrameBridge?: boolean;
     };
   }

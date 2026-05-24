@@ -1,4 +1,5 @@
 #import "VirtualityView.h"
+#import <ApplicationServices/ApplicationServices.h>
 #import <WebKit/WebKit.h>
 #import <unistd.h>
 
@@ -21,11 +22,19 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 @property (nonatomic, assign) BOOL pageLoadInFlight;
 @property (nonatomic, assign) BOOL renderingActive;
 @property (nonatomic, copy) NSString *fullscreenStopTokenAtStart;
+@property (nonatomic, assign) BOOL observedLockedSession;
 
 - (void)stopWebRenderingWithReason:(NSString *)reason;
 - (void)stopSettingsWebViewWithReason:(NSString *)reason;
 - (void)publishFullscreenStopTokenWithReason:(NSString *)reason;
 - (NSString *)currentFullscreenStopToken;
+- (NSString *)selectedRenderMode;
+- (BOOL)usesNativeFrameBridge;
+- (void)stopFullscreenRenderingForExitEvent:(NSString *)reason;
+- (void)registerLifecycleNotifications;
+- (void)workspaceSessionBecameActive:(NSNotification *)notification;
+- (void)workspaceScreensWoke:(NSNotification *)notification;
+- (BOOL)sessionScreenIsLocked;
 
 @end
 
@@ -36,16 +45,24 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     self = [super initWithFrame:frame isPreview:isPreview];
     if (self) {
         self.previewMode = isPreview;
-        [self setAnimationTimeInterval:1.0 / 30.0];
+        [self setAnimationTimeInterval:1.0 / 60.0];
         self.wantsLayer = YES;
         self.layer.backgroundColor = NSColor.blackColor.CGColor;
         NSBundle *bundle = [NSBundle bundleForClass:self.class];
         NSString *version = bundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"?";
         NSString *build = bundle.infoDictionary[@"CFBundleVersion"] ?: @"?";
         [self logMessage:[NSString stringWithFormat:@"init version=%@ build=%@ pid=%d frame=%@ preview=%@", version, build, getpid(), NSStringFromRect(frame), isPreview ? @"YES" : @"NO"]];
+        [self registerLifecycleNotifications];
         [self setupWebView];
     }
     return self;
+}
+
+- (void)registerLifecycleNotifications
+{
+    NSNotificationCenter *workspaceCenter = NSWorkspace.sharedWorkspace.notificationCenter;
+    [workspaceCenter addObserver:self selector:@selector(workspaceSessionBecameActive:) name:NSWorkspaceSessionDidBecomeActiveNotification object:nil];
+    [workspaceCenter addObserver:self selector:@selector(workspaceScreensWoke:) name:NSWorkspaceScreensDidWakeNotification object:nil];
 }
 
 - (void)setupWebView
@@ -129,13 +146,17 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     if (!self.webView) return;
 
     self.webView.frame = self.bounds;
-    [self logMessage:[NSString stringWithFormat:@"%@ bounds=%@ webFrame=%@ ready=%@ hidden=%@ preview=%@ window=%@",
+    if (self.webViewReady) {
+        self.webView.hidden = [self usesNativeFrameBridge];
+    }
+    [self logMessage:[NSString stringWithFormat:@"%@ bounds=%@ webFrame=%@ ready=%@ hidden=%@ preview=%@ nativeFrameBridge=%@ window=%@",
         reason,
         NSStringFromRect(self.bounds),
         NSStringFromRect(self.webView.frame),
         self.webViewReady ? @"YES" : @"NO",
         self.webView.hidden ? @"YES" : @"NO",
         self.previewMode ? @"YES" : @"NO",
+        [self usesNativeFrameBridge] ? @"YES" : @"NO",
         self.window ? @"YES" : @"NO"
     ]];
 
@@ -162,15 +183,29 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 {
     ScreenSaverDefaults *defaults = [self moduleDefaults];
     [defaults synchronize];
-    NSString *mode = [defaults stringForKey:@"mode"];
+    NSString *mode = [self selectedRenderMode];
     NSDictionary *configuration = @{
         @"sceneId": [defaults stringForKey:@"sceneId"] ?: @"omega",
-        @"mode": [mode isEqualToString:@"classic"] ? @"classic" : @"modern",
+        @"mode": mode,
         @"settings": [self storedSettings],
-        @"nativeFrameBridge": @(!self.previewMode)
+        @"nativeHost": @(!self.previewMode),
+        @"nativeFrameBridge": @([self usesNativeFrameBridge])
     };
     NSData *data = [NSJSONSerialization dataWithJSONObject:configuration options:0 error:nil];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"{}";
+}
+
+- (NSString *)selectedRenderMode
+{
+    ScreenSaverDefaults *defaults = [self moduleDefaults];
+    [defaults synchronize];
+    NSString *mode = [defaults stringForKey:@"mode"];
+    return [mode isEqualToString:@"classic"] ? @"classic" : @"modern";
+}
+
+- (BOOL)usesNativeFrameBridge
+{
+    return !self.previewMode;
 }
 
 - (NSDictionary *)storedSettings
@@ -223,6 +258,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
         }
         VirtualityActiveFullscreenView = self;
         self.fullscreenStopTokenAtStart = [self currentFullscreenStopToken];
+        self.observedLockedSession = [self sessionScreenIsLocked];
     }
     self.renderingActive = YES;
     self.snapshotInFlight = NO;
@@ -244,6 +280,59 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     [super stopAnimation];
 }
 
+- (void)stopFullscreenRenderingForExitEvent:(NSString *)reason
+{
+    if (self.previewMode) return;
+    [self publishFullscreenStopTokenWithReason:reason];
+    [self stopWebRenderingWithReason:reason];
+}
+
+- (void)workspaceSessionBecameActive:(NSNotification *)notification
+{
+    [self stopFullscreenRenderingForExitEvent:@"workspace session became active"];
+}
+
+- (void)workspaceScreensWoke:(NSNotification *)notification
+{
+    [self stopFullscreenRenderingForExitEvent:@"workspace screens woke"];
+}
+
+- (void)mouseMoved:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen mouse moved"];
+    [super mouseMoved:event];
+}
+
+- (void)mouseDown:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen mouse down"];
+    [super mouseDown:event];
+}
+
+- (void)rightMouseDown:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen right mouse down"];
+    [super rightMouseDown:event];
+}
+
+- (void)otherMouseDown:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen other mouse down"];
+    [super otherMouseDown:event];
+}
+
+- (void)keyDown:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen key down"];
+    [super keyDown:event];
+}
+
+- (void)scrollWheel:(NSEvent *)event
+{
+    [self stopFullscreenRenderingForExitEvent:@"fullscreen scroll"];
+    [super scrollWheel:event];
+}
+
 - (void)stopWebRenderingWithReason:(NSString *)reason
 {
     if (!self.webView) return;
@@ -255,6 +344,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     self.webSnapshot = nil;
     self.lastLoadedConfigurationJSON = nil;
     self.fullscreenStopTokenAtStart = nil;
+    self.observedLockedSession = NO;
     self.webView.hidden = YES;
 
     [self logMessage:[NSString stringWithFormat:@"stop web rendering reason=%@ bounds=%@ preview=%@",
@@ -308,6 +398,8 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     [NSColor.blackColor setFill];
     NSRectFill(rect);
 
+    if (self.webViewReady && ![self usesNativeFrameBridge]) return;
+
     if (!self.previewMode && self.webSnapshot) {
         NSRect sourceRect = NSMakeRect(0, 0, self.webSnapshot.size.width, self.webSnapshot.size.height);
         NSImageInterpolation interpolation = NSGraphicsContext.currentContext.imageInterpolation;
@@ -316,8 +408,6 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
         NSGraphicsContext.currentContext.imageInterpolation = interpolation;
         return;
     }
-
-    if (self.webViewReady && self.previewMode) return;
 
     CGFloat width = NSWidth(self.bounds);
     CGFloat height = NSHeight(self.bounds);
@@ -359,18 +449,26 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
             [self stopWebRenderingWithReason:@"fullscreen stop token changed"];
             return;
         }
+        BOOL screenLocked = [self sessionScreenIsLocked];
+        if (screenLocked) {
+            self.observedLockedSession = YES;
+        } else if (self.observedLockedSession) {
+            [self stopWebRenderingWithReason:@"session unlocked"];
+            return;
+        }
     }
     if (!self.previewMode && !self.window.visible) {
         [self stopWebRenderingWithReason:@"fullscreen window hidden"];
         return;
     }
+    if (![self usesNativeFrameBridge]) return;
     [self requestWebSnapshotIfNeeded];
     [self setNeedsDisplay:YES];
 }
 
 - (void)requestWebSnapshotIfNeeded
 {
-    if (self.previewMode || !self.renderingActive || !self.window || !self.window.visible || !self.webViewReady || self.snapshotInFlight || NSIsEmptyRect(self.webView.bounds)) return;
+    if (![self usesNativeFrameBridge] || self.previewMode || !self.renderingActive || !self.window || !self.window.visible || !self.webViewReady || self.snapshotInFlight || NSIsEmptyRect(self.webView.bounds)) return;
 
     self.snapshotInFlight = YES;
     NSString *script = @"(() => { const canvas = document.querySelector('canvas'); if (!canvas) return { ok: false, reason: 'no canvas' }; try { if (typeof window.__VIRTUALITY_RENDER_FRAME__ === 'function') return window.__VIRTUALITY_RENDER_FRAME__(); return { ok: true, width: canvas.width, height: canvas.height, frame: -1, dataURL: canvas.toDataURL('image/png') }; } catch (error) { return { ok: false, reason: String(error) }; } })()";
@@ -462,6 +560,13 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     return YES;
 }
 
+- (BOOL)sessionScreenIsLocked
+{
+    NSDictionary *session = CFBridgingRelease(CGSessionCopyCurrentDictionary());
+    id value = session[@"CGSSessionScreenIsLocked"];
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+}
+
 - (NSWindow *)configureSheet
 {
     [self logMessage:@"configureSheet"];
@@ -511,7 +616,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
         NSInteger rectHeight = [details[@"rectHeight"] respondsToSelector:@selector(integerValue)] ? [details[@"rectHeight"] integerValue] : 0;
         BOOL hasDrawableCanvas = hasCanvas && canvasWidth > 0 && canvasHeight > 0 && rectWidth > 0 && rectHeight > 0;
 
-        [self logMessage:[NSString stringWithFormat:@"webView canvas=%@ size=%ldx%ld rect=%ldx%ld viewport=%@x%@ sample=%@/%@ frame=%@ renderError=%@ sampleError=%@ error=%@",
+        [self logMessage:[NSString stringWithFormat:@"webView canvas=%@ size=%ldx%ld rect=%ldx%ld viewport=%@x%@ nativeFrameBridge=%@ sample=%@/%@ frame=%@ renderError=%@ sampleError=%@ error=%@",
             hasCanvas ? @"YES" : @"NO",
             (long)canvasWidth,
             (long)canvasHeight,
@@ -519,6 +624,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
             (long)rectHeight,
             details[@"innerWidth"] ?: @"?",
             details[@"innerHeight"] ?: @"?",
+            [self usesNativeFrameBridge] ? @"YES" : @"NO",
             details[@"sampleNonBlack"] ?: @"?",
             details[@"sampleTotal"] ?: @"?",
             details[@"renderFrame"] ?: @"?",
@@ -528,7 +634,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
         ]];
         if (hasDrawableCanvas && webView == self.webView) {
             self.webViewReady = YES;
-            self.webView.hidden = !self.previewMode;
+            self.webView.hidden = [self usesNativeFrameBridge];
             self.webView.alphaValue = 1.0;
             [self.webView evaluateJavaScript:@"window.dispatchEvent(new Event('resize'))" completionHandler:nil];
             [self setNeedsDisplay:YES];
@@ -647,6 +753,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 {
     [self stopWebRenderingWithReason:@"dealloc"];
     [self stopSettingsWebViewWithReason:@"dealloc"];
+    [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
     [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"virtualityLog"];
 }
 

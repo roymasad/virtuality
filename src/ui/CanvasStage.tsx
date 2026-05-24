@@ -8,6 +8,7 @@ interface CanvasStageProps {
   settings: SceneSettings;
   onExit: () => void;
   onSceneAction?: (action: string) => void;
+  nativeHost?: boolean;
   nativeFrameBridge?: boolean;
 }
 
@@ -37,7 +38,7 @@ declare global {
   }
 }
 
-export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nativeFrameBridge = false }: CanvasStageProps) {
+export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nativeHost = false, nativeFrameBridge = false }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneInstance = useMemo(() => scene.create(), [scene]);
   const settingsRef = useRef(settings);
@@ -70,9 +71,9 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
     const updateSize = () => {
       const rect = canvas.getBoundingClientRect();
       const classic = modeRef.current === "classic";
-      // The macOS native bridge PNG-decodes every frame before drawing it.
-      // Full CSS resolution avoids blur without paying the cost of Retina-sized PNGs.
-      const dpr = nativeFrameBridge ? 1 : window.devicePixelRatio || 1;
+      // The macOS host either PNG-decodes frames or runs inside ScreenSaverEngine.
+      // Full CSS resolution avoids blur without paying the cost of Retina-sized canvases.
+      const dpr = nativeHost || nativeFrameBridge ? 1 : window.devicePixelRatio || 1;
       let nextWidth = classic ? 320 : Math.max(640, Math.floor(rect.width * dpr));
       let nextHeight = classic ? 200 : Math.max(400, Math.floor(rect.height * dpr));
 
@@ -208,7 +209,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
         height: canvas.height,
         cssWidth: Math.round(rect.width),
         cssHeight: Math.round(rect.height),
-        pixelRatio: nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
+        pixelRatio: nativeHost || nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
         frame,
         sampleNonBlack,
         sampleTotal,
@@ -271,7 +272,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointerleave", onPointerUp);
     };
-  }, [sceneInstance, onExit, nativeFrameBridge]);
+  }, [sceneInstance, onExit, nativeHost, nativeFrameBridge]);
 
   return (
     <canvas

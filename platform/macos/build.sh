@@ -27,6 +27,7 @@ xcrun clang \
   -isysroot "$SDK_PATH" \
   -mmacosx-version-min=13.0 \
   -framework Cocoa \
+  -framework ApplicationServices \
   -framework ScreenSaver \
   -framework WebKit \
   "$ROOT_DIR/platform/macos/Sources/VirtualityView.m" \
