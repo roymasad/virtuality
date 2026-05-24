@@ -91,11 +91,23 @@ export class DuneFlyoverScene implements ThreeScene {
   private moonScreenY = 0.33;
   private nightAmount = 0;
   private starAmount = 0;
+  private shadowNeedsRefresh = true;
+  private lastShadowUpdateTime = Number.NEGATIVE_INFINITY;
+  private lastShadowLightX = Number.NaN;
+  private lastShadowLightY = Number.NaN;
+  private lastShadowLightZ = Number.NaN;
+  private lastShadowTargetX = Number.NaN;
+  private lastShadowTargetY = Number.NaN;
+  private lastShadowTargetZ = Number.NaN;
+  private lastRuinShadowSignature = "";
   private skyPitchOffset = 0;
   private skyTime = 0;
   private ruins = new THREE.Group();
   private terrainCols = 0;
   private terrainRows = 0;
+  private terrainCenterX = Number.NaN;
+  private terrainCenterZ = Number.NaN;
+  private terrainDuneScale = Number.NaN;
   private lastRenderWidth = 0;
   private lastRenderHeight = 0;
   private lastPaletteId = "";
@@ -120,7 +132,7 @@ export class DuneFlyoverScene implements ThreeScene {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.autoUpdate = true;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.camera.position.set(0, 78, cameraZ);
@@ -205,6 +217,15 @@ export class DuneFlyoverScene implements ThreeScene {
     this.ambientLight = null;
     this.sunLight = null;
     this.lastPaletteId = "";
+    this.shadowNeedsRefresh = true;
+    this.lastShadowUpdateTime = Number.NEGATIVE_INFINITY;
+    this.lastShadowLightX = Number.NaN;
+    this.lastShadowLightY = Number.NaN;
+    this.lastShadowLightZ = Number.NaN;
+    this.lastShadowTargetX = Number.NaN;
+    this.lastShadowTargetY = Number.NaN;
+    this.lastShadowTargetZ = Number.NaN;
+    this.lastRuinShadowSignature = "";
     this.lastRenderWidth = 0;
     this.lastRenderHeight = 0;
     this.cameraRoll = 0;
@@ -222,6 +243,9 @@ export class DuneFlyoverScene implements ThreeScene {
     this.terrainSignature = "";
     this.terrainCols = 0;
     this.terrainRows = 0;
+    this.terrainCenterX = Number.NaN;
+    this.terrainCenterZ = Number.NaN;
+    this.terrainDuneScale = Number.NaN;
   }
 
   private disposeRuins() {
@@ -281,7 +305,7 @@ export class DuneFlyoverScene implements ThreeScene {
 
     this.terrain = new THREE.Mesh(geometry, material);
     this.terrain.receiveShadow = true;
-    // The flyover rewrites terrain vertices in world space every frame.
+    // The flyover keeps terrain vertices in world space and recenters the grid as needed.
     // A stale bounding sphere can otherwise make Three.js cull the whole desert.
     this.terrain.frustumCulled = false;
     this.scene.add(this.terrain);
@@ -301,19 +325,35 @@ export class DuneFlyoverScene implements ThreeScene {
     const cellLength = terrainLength / Math.max(1, this.terrainRows);
     const centerX = Math.round(flight.x / cellWidth) * cellWidth;
     const centerZ = Math.round(flight.z / cellLength) * cellLength;
+    const duneScale = clamp(numberSetting(settings, "duneScale", 1), 0.45, 2.2);
+    const geometryNeedsUpdate =
+      centerX !== this.terrainCenterX ||
+      centerZ !== this.terrainCenterZ ||
+      duneScale !== this.terrainDuneScale;
+
+    if (geometryNeedsUpdate) {
+      for (let index = 0; index < positions.count; index += 1) {
+        const xIndex = index % (this.terrainCols + 1);
+        const zIndex = Math.floor(index / (this.terrainCols + 1));
+        const localX = (xIndex / this.terrainCols - 0.5) * terrainWidth;
+        const localZ = -1200 + (zIndex / this.terrainRows) * terrainLength;
+        const worldX = centerX + localX;
+        const worldZ = centerZ + localZ;
+        positions.setX(index, worldX);
+        positions.setY(index, this.sampleHeight(worldX, worldZ, settings));
+        positions.setZ(index, worldZ);
+      }
+
+      positions.needsUpdate = true;
+      this.terrain.geometry.computeVertexNormals();
+      this.terrainCenterX = centerX;
+      this.terrainCenterZ = centerZ;
+      this.terrainDuneScale = duneScale;
+    }
 
     for (let index = 0; index < positions.count; index += 1) {
-      const xIndex = index % (this.terrainCols + 1);
-      const zIndex = Math.floor(index / (this.terrainCols + 1));
-      const localX = (xIndex / this.terrainCols - 0.5) * terrainWidth;
-      const localZ = -1200 + (zIndex / this.terrainRows) * terrainLength;
-      const worldX = centerX + localX;
-      const worldZ = centerZ + localZ;
-      const height = this.sampleHeight(worldX, worldZ, settings);
-      positions.setX(index, worldX);
-      positions.setY(index, height);
-      positions.setZ(index, worldZ);
-
+      const worldZ = positions.getZ(index);
+      const height = positions.getY(index);
       const distance = worldZ - flight.z;
       const horizonFade = smoothstep(2500, 11600, distance);
       const nearLight = smoothstep(1000, 120, distance) * 0.03;
@@ -327,9 +367,7 @@ export class DuneFlyoverScene implements ThreeScene {
       colors.setXYZ(index, color.r, color.g, color.b);
     }
 
-    positions.needsUpdate = true;
     colors.needsUpdate = true;
-    this.terrain.geometry.computeVertexNormals();
   }
 
   private updateCamera(ctx: ThreeSceneContext) {
@@ -394,6 +432,7 @@ export class DuneFlyoverScene implements ThreeScene {
     const dayStone = "#34312d";
     const ruinColor = mixHex(mixHex(nightStone, twilightStone, 1 - this.nightAmount), dayStone, this.sunAmount * 0.72);
     const flight = this.flightPath();
+    const shadowSignature: string[] = [];
     this.ruins.children.forEach((child, index) => {
       const placement = ruinPlacements[index % ruinPlacements.length];
       const cycle = Math.floor((flight.z + 5200 - placement.offset) / ruinLoopLength);
@@ -403,6 +442,7 @@ export class DuneFlyoverScene implements ThreeScene {
       const scaleY = placement.height + hash(seed + 8) * 0.18;
       child.position.set(worldX, this.sampleHeight(worldX, worldZ, settings) + 14 * scaleY - 0.4, worldZ);
       child.scale.set(placement.width + hash(seed + 3) * 0.16, scaleY, 0.85 + hash(seed + 6) * 0.2);
+      shadowSignature.push(`${index}:${worldX.toFixed(1)}:${worldZ.toFixed(1)}:${scaleY.toFixed(3)}`);
       child.traverse((item) => {
         const mesh = item as THREE.Mesh;
         const material = mesh.material as THREE.MeshLambertMaterial | undefined;
@@ -411,8 +451,10 @@ export class DuneFlyoverScene implements ThreeScene {
     });
     this.ruins.updateMatrixWorld(true);
     this.terrain?.updateMatrixWorld(true);
-    if (this.sunLight) {
-      this.sunLight.shadow.needsUpdate = true;
+    const nextShadowSignature = shadowSignature.join("|");
+    if (nextShadowSignature !== this.lastRuinShadowSignature) {
+      this.lastRuinShadowSignature = nextShadowSignature;
+      this.shadowNeedsRefresh = true;
     }
   }
 
@@ -652,8 +694,26 @@ export class DuneFlyoverScene implements ThreeScene {
       this.sunLight.target.updateMatrixWorld();
       this.sunLight.shadow.camera.updateMatrixWorld();
       this.sunLight.shadow.camera.updateProjectionMatrix();
-      this.sunLight.shadow.needsUpdate = true;
-      this.renderer!.shadowMap.needsUpdate = true;
+      const shadowIntervalElapsed = ctx.time - this.lastShadowUpdateTime >= 1 / 30;
+      const shadowMoved =
+        Math.abs(this.sunLight.position.x - this.lastShadowLightX) > 2 ||
+        Math.abs(this.sunLight.position.y - this.lastShadowLightY) > 2 ||
+        Math.abs(this.sunLight.position.z - this.lastShadowLightZ) > 2 ||
+        Math.abs(this.sunLight.target.position.x - this.lastShadowTargetX) > 2 ||
+        Math.abs(this.sunLight.target.position.y - this.lastShadowTargetY) > 2 ||
+        Math.abs(this.sunLight.target.position.z - this.lastShadowTargetZ) > 2;
+      if (this.shadowNeedsRefresh || (shadowIntervalElapsed && shadowMoved)) {
+        this.sunLight.shadow.needsUpdate = true;
+        this.renderer!.shadowMap.needsUpdate = true;
+        this.shadowNeedsRefresh = false;
+        this.lastShadowUpdateTime = ctx.time;
+        this.lastShadowLightX = this.sunLight.position.x;
+        this.lastShadowLightY = this.sunLight.position.y;
+        this.lastShadowLightZ = this.sunLight.position.z;
+        this.lastShadowTargetX = this.sunLight.target.position.x;
+        this.lastShadowTargetY = this.sunLight.target.position.y;
+        this.lastShadowTargetZ = this.sunLight.target.position.z;
+      }
     }
   }
 
