@@ -40,9 +40,14 @@ declare global {
 
 export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nativeHost = false, nativeFrameBridge = false }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sceneInstance = useMemo(() => scene.create(), [scene]);
+  const sceneInstance = useMemo(() => {
+    const instance = scene.create?.();
+    if (!instance) throw new Error(`${scene.title} does not provide a canvas renderer`);
+    return instance;
+  }, [scene]);
   const settingsRef = useRef(settings);
   const modeRef = useRef(mode);
+  const exitRef = useRef(onExit);
   const actionRef = useRef(onSceneAction);
   const inputRef = useRef<InputState>({
     pointer: { x: 160, y: 100, down: false, justPressed: false, active: false },
@@ -52,6 +57,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
 
   settingsRef.current = settings;
   modeRef.current = mode;
+  exitRef.current = onExit;
   actionRef.current = onSceneAction;
 
   useLayoutEffect(() => {
@@ -110,7 +116,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onExit();
+        exitRef.current();
         return;
       }
       inputRef.current.keys.add(event.key);
@@ -143,7 +149,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
         canvas.width,
         canvas.height,
         modeRef.current,
-        Boolean(settingsRef.current.antialias),
+        modeRef.current === "modern" || Boolean(settingsRef.current.antialias),
         Number(settingsRef.current.modernLineWidth) || 1,
       );
       const sceneContext = {
@@ -228,7 +234,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
       canvas.width,
       canvas.height,
       modeRef.current,
-      Boolean(settingsRef.current.antialias),
+      modeRef.current === "modern" || Boolean(settingsRef.current.antialias),
       Number(settingsRef.current.modernLineWidth) || 1,
     ), {
       mode: modeRef.current,
@@ -272,7 +278,7 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointerleave", onPointerUp);
     };
-  }, [sceneInstance, onExit, nativeHost, nativeFrameBridge]);
+  }, [sceneInstance, nativeHost, nativeFrameBridge]);
 
   return (
     <canvas

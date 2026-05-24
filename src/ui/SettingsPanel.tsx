@@ -60,9 +60,13 @@ export function SettingsPanel({
         </button>
       </div>
       <p className="mode-note">
-        {mode === "classic"
-          ? "Classic keeps the 320x200 VGA coordinate system and pixelated scaling."
-          : "Modern renders to the live canvas resolution with smoothing and richer timing where the scene supports it."}
+        {scene.renderer === "three"
+          ? mode === "classic"
+            ? "Classic renders the live 3D scene at a lower internal resolution with crisp pixel scaling."
+            : "Modern keeps the retro-CG style while increasing render clarity, terrain detail, and atmosphere."
+          : mode === "classic"
+            ? "Classic keeps the 320x200 VGA coordinate system and pixelated scaling."
+            : "Modern renders to the live canvas resolution with smoothing and richer timing where the scene supports it."}
       </p>
 
       <div className="control-list">
@@ -132,9 +136,11 @@ export function SettingsPanel({
         <Maximize2 size={16} /> Fullscreen
       </button>
 
-      <a className="icon-button wide secondary-action" href={sourceUrl} target="_blank" rel="noreferrer">
-        <ExternalLink size={16} /> Original GitHub
-      </a>
+      {scene.annotation ? (
+        <a className="icon-button wide secondary-action" href={sourceUrl} target="_blank" rel="noreferrer">
+          <ExternalLink size={16} /> Original GitHub
+        </a>
+      ) : null}
     </aside>
   );
 }

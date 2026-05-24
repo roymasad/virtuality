@@ -1,4 +1,5 @@
 export type RenderMode = "classic" | "modern";
+export type SceneRenderer = "canvas2d" | "three";
 
 export type SettingKind = "range" | "select" | "toggle";
 
@@ -58,9 +59,12 @@ export interface SceneMeta {
   key: string;
   originalName: string;
   note: string;
-  annotation: SceneAnnotation;
+  renderer: SceneRenderer;
+  badge?: string;
+  annotation?: SceneAnnotation;
   settings: SceneSetting[];
-  create: () => Scene;
+  create?: () => Scene;
+  createThree?: () => ThreeScene;
 }
 
 export interface SceneContext {
@@ -77,6 +81,20 @@ export interface Scene {
   init?: (draw: DrawApi, ctx: SceneContext) => void;
   update?: (draw: DrawApi, ctx: SceneContext) => void;
   render: (draw: DrawApi, ctx: SceneContext) => void;
+  dispose?: () => void;
+}
+
+export interface ThreeSceneContext extends SceneContext {
+  width: number;
+  height: number;
+  pixelRatio: number;
+}
+
+export interface ThreeScene {
+  init: (canvas: HTMLCanvasElement, ctx: ThreeSceneContext) => void;
+  resize?: (ctx: ThreeSceneContext) => void;
+  update?: (ctx: ThreeSceneContext) => void;
+  render: (ctx: ThreeSceneContext) => void;
   dispose?: () => void;
 }
 

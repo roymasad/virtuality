@@ -1,4 +1,5 @@
-import type { SceneMeta } from "../engine/types";
+import type { SceneMeta, SceneSetting } from "../engine/types";
+import { DuneFlyoverScene } from "./duneFlyoverScene";
 import { ProceduralScene, type SceneKind } from "./proceduralScene";
 import { commonSettings, settingsWithOptions, settingsWithVariants } from "./settings";
 
@@ -19,6 +20,7 @@ function scene(
     key,
     originalName,
     note,
+    renderer: "canvas2d",
     settings,
     annotation: {
       file: "VIRT.BAS",
@@ -30,6 +32,91 @@ function scene(
   };
 }
 
+function threeScene(
+  id: string,
+  title: string,
+  key: string,
+  note: string,
+  settings: SceneSetting[],
+): SceneMeta {
+  return {
+    id,
+    title,
+    key,
+    originalName: "NEW 3D",
+    note,
+    renderer: "three",
+    badge: "NEW 3D",
+    settings,
+    createThree: () => new DuneFlyoverScene(),
+  };
+}
+
+const duneSettings: SceneSetting[] = [
+  {
+    kind: "range",
+    id: "speed",
+    label: "Speed",
+    description: "Forward flyover speed.",
+    min: 0.25,
+    max: 2.5,
+    step: 0.05,
+    defaultValue: 1,
+  },
+  {
+    kind: "range",
+    id: "duneScale",
+    label: "Dune scale",
+    description: "Width and spacing of the rolling dune ridges.",
+    min: 0.5,
+    max: 2,
+    step: 0.05,
+    defaultValue: 0.5,
+  },
+  {
+    kind: "range",
+    id: "terrainDetail",
+    label: "Terrain detail",
+    description: "Mesh density for dune silhouettes and facets.",
+    min: 0,
+    max: 2,
+    step: 0.05,
+    defaultValue: 1,
+  },
+  {
+    kind: "range",
+    id: "cameraHeight",
+    label: "Camera height",
+    description: "How high the flyover rides above the dune field.",
+    min: 0,
+    max: 2,
+    step: 0.05,
+    defaultValue: 1,
+  },
+  {
+    kind: "range",
+    id: "pixelation",
+    label: "Pixelation",
+    description: "Internal render scale for the retro-CG crunch.",
+    min: 0,
+    max: 4,
+    step: 0.05,
+    defaultValue: 2,
+  },
+  {
+    kind: "select",
+    id: "palette",
+    label: "Palette",
+    description: "DOS-era color treatment for sky, sand, and traces.",
+    options: [
+      { label: "Sietch Dusk", value: "dusk", description: "Purple sky, amber dunes, cyan horizon traces." },
+      { label: "VGA Noon", value: "noon", description: "Bright blue sky and hot gold sand." },
+      { label: "Night Flight", value: "night", description: "Deep indigo desert with red sun glow." },
+    ],
+    defaultValue: "dusk",
+  },
+];
+
 export const systemScenes: SceneMeta[] = [
   scene("intro", "Intro and Title", "I", "program start", "The opening star field, title data art, and menu identity remade for canvas.", 27, 258, "intro"),
   scene("info", "Info", "N", "INFO", "The old credits chamber, now with readable archive notes beside it.", 1588, 1661, "info"),
@@ -37,6 +124,7 @@ export const systemScenes: SceneMeta[] = [
 ];
 
 export const demoScenes: SceneMeta[] = [
+  threeScene("dune-flyover", "Dune Flyover", "3D", "A new live Three.js desert flyover with retro-CG dunes, ruins, sun, and horizon traces.", duneSettings),
   scene("omega", "Omega Beams", "1", "OMEGA", "Radial beam geometry with density and length controls.", 2069, 2170, "omega", settingsWithOptions({ trail: 0.05 })),
   scene("laser", "Laser Beams", "2", "LASER", "Triangular laser traces driven by speed and color motion.", 1663, 1827, "laser", settingsWithOptions({ trail: 0.05 })),
   scene("craper", "Random Walker", "3", "CRAPER", "Slow random-walk line drawing from the original mode selector.", 1070, 1105, "craper", settingsWithVariants([
@@ -99,14 +187,14 @@ export const demoScenes: SceneMeta[] = [
 ];
 
 export const scenes = [...systemScenes, ...demoScenes];
-export const screensaverScenes = scenes.filter((item) => item.id !== "intro" && item.id !== "info");
+export const screensaverScenes = scenes.filter((item) => item.id !== "intro" && item.id !== "info" && item.renderer === "canvas2d");
 
 export function findScene(id: string | null) {
   return scenes.find((item) => item.id === id) ?? scenes[0];
 }
 
 export function findScreensaverScene(id: string | null) {
-  return screensaverScenes.find((item) => item.id === id) ?? demoScenes[0];
+  return screensaverScenes.find((item) => item.id === id) ?? screensaverScenes[0];
 }
 
 export function findSceneByKey(key: string) {

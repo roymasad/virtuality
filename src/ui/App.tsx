@@ -24,7 +24,7 @@ import type { RenderMode, SceneSettings } from "../engine/types";
 import { originalSourceLines } from "../data/originalData";
 import { findScene, scenes } from "../scenes/registry";
 import { defaultsFor } from "../scenes/settings";
-import { CanvasStage } from "./CanvasStage";
+import { StageHost } from "./StageHost";
 import { navigate, useHashRoute } from "./useHashRoute";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -82,6 +82,7 @@ function Gallery() {
                 </span>
                 <span>
                   <b>{scene.title}</b>
+                  {scene.badge ? <small className="scene-badge">{scene.badge}</small> : null}
                 </span>
               </button>
               <p>{scene.note}</p>
@@ -133,6 +134,7 @@ function iconForScene(id: string) {
     disco: Disc3,
     spheres: CircleDot,
     spots: Sparkles,
+    "dune-flyover": Waves,
   };
   return icons[id as keyof typeof icons] ?? Sparkles;
 }
@@ -228,7 +230,7 @@ function ScenePage({ sceneId }: { sceneId: string }) {
             stageRef.current = node;
           }}
         >
-          <CanvasStage
+          <StageHost
             scene={scene}
             mode={mode}
             settings={settings}
@@ -258,7 +260,14 @@ function ScenePage({ sceneId }: { sceneId: string }) {
 
 function SourcePage({ sceneId }: { sceneId: string }) {
   const scene = findScene(sceneId);
-  const excerpt = originalSourceLines.slice(scene.annotation.startLine - 1, scene.annotation.endLine);
+  useEffect(() => {
+    if (!scene.annotation) navigate({ name: "scene", sceneId: scene.id });
+  }, [scene]);
+
+  if (!scene.annotation) return null;
+
+  const annotation = scene.annotation;
+  const excerpt = originalSourceLines.slice(annotation.startLine - 1, annotation.endLine);
 
   return (
     <main className="source-page">
@@ -268,7 +277,7 @@ function SourcePage({ sceneId }: { sceneId: string }) {
         </button>
         <div className="top-title">
           <strong>{scene.title} Source</strong>
-          <span>{scene.annotation.file} lines {scene.annotation.startLine}-{scene.annotation.endLine}</span>
+          <span>{annotation.file} lines {annotation.startLine}-{annotation.endLine}</span>
         </div>
         <button className="top-icon" onClick={() => navigate({ name: "scene", sceneId: scene.id })} title="Play">
           <Play size={18} />
@@ -288,7 +297,7 @@ function SourcePage({ sceneId }: { sceneId: string }) {
         </aside>
         <pre className="source-code">
           {excerpt.map((line, index) => {
-            const number = scene.annotation.startLine + index;
+            const number = annotation.startLine + index;
             return `${String(number).padStart(4, " ")}  ${line}`;
           }).join("\n")}
         </pre>
