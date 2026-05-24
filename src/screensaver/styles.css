@@ -127,6 +127,23 @@ body,
   line-height: 1;
 }
 
+.settings-footer {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.settings-footer a {
+  color: var(--green);
+  text-decoration: none;
+}
+
+.settings-footer a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 720px) {
   .settings-page {
     grid-template-columns: 1fr;

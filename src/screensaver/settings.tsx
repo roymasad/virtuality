@@ -206,6 +206,11 @@ function SettingsApp() {
             );
           })}
         </div>
+        <footer className="settings-footer">
+          <a href="https://virtuality.roymassaad.com" target="_blank" rel="noreferrer">
+            virtuality.roymassaad.com
+          </a>
+        </footer>
       </aside>
     </main>
   );

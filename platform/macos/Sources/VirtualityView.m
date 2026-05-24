@@ -23,6 +23,8 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 @property (nonatomic, assign) BOOL renderingActive;
 @property (nonatomic, copy) NSString *fullscreenStopTokenAtStart;
 @property (nonatomic, assign) BOOL observedLockedSession;
+@property (nonatomic, assign) BOOL retiredFullscreenView;
+@property (nonatomic, assign) NSUInteger idleTerminationGeneration;
 
 - (void)stopWebRenderingWithReason:(NSString *)reason;
 - (void)stopSettingsWebViewWithReason:(NSString *)reason;
@@ -34,7 +36,10 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 - (void)registerLifecycleNotifications;
 - (void)workspaceSessionBecameActive:(NSNotification *)notification;
 - (void)workspaceScreensWoke:(NSNotification *)notification;
+- (void)screenSaverWillStop:(NSNotification *)notification;
 - (BOOL)sessionScreenIsLocked;
+- (void)scheduleFullscreenIdleTerminationWithReason:(NSString *)reason;
+- (void)cancelFullscreenIdleTerminationWithReason:(NSString *)reason;
 
 @end
 
@@ -63,10 +68,18 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     NSNotificationCenter *workspaceCenter = NSWorkspace.sharedWorkspace.notificationCenter;
     [workspaceCenter addObserver:self selector:@selector(workspaceSessionBecameActive:) name:NSWorkspaceSessionDidBecomeActiveNotification object:nil];
     [workspaceCenter addObserver:self selector:@selector(workspaceScreensWoke:) name:NSWorkspaceScreensDidWakeNotification object:nil];
+    [NSDistributedNotificationCenter.defaultCenter addObserver:self
+        selector:@selector(screenSaverWillStop:)
+        name:@"com.apple.screensaver.willstop"
+        object:nil
+        suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately
+    ];
 }
 
 - (void)setupWebView
 {
+    if (self.webView) return;
+
     WKWebViewConfiguration *configuration = [self webViewConfigurationWithMessageHandler:NO];
 
     self.webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
@@ -84,6 +97,11 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
 - (void)loadScreensaverPage
 {
+    if (!self.webView) {
+        [self setupWebView];
+        return;
+    }
+
     NSBundle *bundle = [NSBundle bundleForClass:self.class];
     NSURL *resourcesURL = bundle.resourceURL;
     NSURL *htmlURL = [resourcesURL URLByAppendingPathComponent:@"web/screensaver.html"];
@@ -244,16 +262,26 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
 - (void)startAnimation
 {
+    if (!self.previewMode && self.retiredFullscreenView) {
+        [self logMessage:@"startAnimation ignored retired fullscreen view"];
+        return;
+    }
     [super startAnimation];
+    [self cancelFullscreenIdleTerminationWithReason:@"startAnimation"];
+    if (!self.webView) {
+        [self setupWebView];
+    }
     if (self.previewMode) {
         [self publishFullscreenStopTokenWithReason:@"system preview resumed"];
         VirtualityView *fullscreenView = VirtualityActiveFullscreenView;
         if (fullscreenView && fullscreenView != self) {
+            fullscreenView.retiredFullscreenView = YES;
             [fullscreenView stopWebRenderingWithReason:@"system preview resumed"];
         }
     } else {
         VirtualityView *previousView = VirtualityActiveFullscreenView;
         if (previousView && previousView != self) {
+            previousView.retiredFullscreenView = YES;
             [previousView stopWebRenderingWithReason:@"superseded fullscreen view"];
         }
         VirtualityActiveFullscreenView = self;
@@ -297,6 +325,11 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     [self stopFullscreenRenderingForExitEvent:@"workspace screens woke"];
 }
 
+- (void)screenSaverWillStop:(NSNotification *)notification
+{
+    [self stopFullscreenRenderingForExitEvent:@"screensaver will stop notification"];
+}
+
 - (void)mouseMoved:(NSEvent *)event
 {
     [self stopFullscreenRenderingForExitEvent:@"fullscreen mouse moved"];
@@ -335,7 +368,13 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
 - (void)stopWebRenderingWithReason:(NSString *)reason
 {
-    if (!self.webView) return;
+    WKWebView *webView = self.webView;
+    if (!webView) {
+        if (!self.previewMode && ![reason isEqualToString:@"dealloc"]) {
+            [self scheduleFullscreenIdleTerminationWithReason:reason];
+        }
+        return;
+    }
 
     self.renderingActive = NO;
     self.snapshotInFlight = NO;
@@ -345,7 +384,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     self.lastLoadedConfigurationJSON = nil;
     self.fullscreenStopTokenAtStart = nil;
     self.observedLockedSession = NO;
-    self.webView.hidden = YES;
+    webView.hidden = YES;
 
     [self logMessage:[NSString stringWithFormat:@"stop web rendering reason=%@ bounds=%@ preview=%@",
         reason,
@@ -355,8 +394,51 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     if (!self.previewMode && VirtualityActiveFullscreenView == self) {
         VirtualityActiveFullscreenView = nil;
     }
-    [self.webView evaluateJavaScript:@"try { window.__VIRTUALITY_STOP__?.(); delete window.__VIRTUALITY_RENDER_FRAME__; delete window.__VIRTUALITY_STOP__; } catch (_) {}" completionHandler:nil];
-    [self.webView stopLoading];
+    [webView evaluateJavaScript:@"try { window.__VIRTUALITY_STOP__?.(); delete window.__VIRTUALITY_RENDER_FRAME__; delete window.__VIRTUALITY_STOP__; } catch (_) {}" completionHandler:nil];
+    [webView stopLoading];
+    webView.navigationDelegate = nil;
+    [webView.configuration.userContentController removeScriptMessageHandlerForName:@"virtualityLog"];
+    [webView removeFromSuperview];
+    self.webView = nil;
+
+    if (!self.previewMode && ![reason isEqualToString:@"dealloc"]) {
+        [self scheduleFullscreenIdleTerminationWithReason:reason];
+    }
+}
+
+- (void)cancelFullscreenIdleTerminationWithReason:(NSString *)reason
+{
+    self.idleTerminationGeneration += 1;
+    if (!self.previewMode) {
+        [self logMessage:[NSString stringWithFormat:@"cancel fullscreen idle termination reason=%@", reason]];
+    }
+}
+
+- (void)scheduleFullscreenIdleTerminationWithReason:(NSString *)reason
+{
+    if (self.previewMode) return;
+
+    self.idleTerminationGeneration += 1;
+    NSUInteger generation = self.idleTerminationGeneration;
+    [self logMessage:[NSString stringWithFormat:@"schedule fullscreen idle termination reason=%@ generation=%lu", reason, (unsigned long)generation]];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(65.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        VirtualityView *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        if (strongSelf.previewMode || strongSelf.renderingActive || strongSelf.webView || strongSelf.configureWindow || strongSelf.settingsWebView || strongSelf.idleTerminationGeneration != generation) {
+            [strongSelf logMessage:[NSString stringWithFormat:@"skip fullscreen idle termination generation=%lu active=%@ webView=%@ settings=%@",
+                (unsigned long)generation,
+                strongSelf.renderingActive ? @"YES" : @"NO",
+                strongSelf.webView ? @"YES" : @"NO",
+                (strongSelf.configureWindow || strongSelf.settingsWebView) ? @"YES" : @"NO"
+            ]];
+            return;
+        }
+
+        [strongSelf logMessage:[NSString stringWithFormat:@"terminate fullscreen idle host generation=%lu", (unsigned long)generation]];
+        [NSApp terminate:nil];
+    });
 }
 
 - (NSString *)fullscreenStopTokenPath
@@ -754,7 +836,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     [self stopWebRenderingWithReason:@"dealloc"];
     [self stopSettingsWebViewWithReason:@"dealloc"];
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
-    [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"virtualityLog"];
+    [NSDistributedNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)logMessage:(NSString *)message
