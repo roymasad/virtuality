@@ -53,6 +53,7 @@ body,
 }
 
 .settings-preview {
+  position: relative;
   min-width: 0;
   height: 100vh;
   display: grid;
@@ -74,6 +75,22 @@ body,
   height: auto;
   max-height: none;
   aspect-ratio: 16 / 10;
+}
+
+.preview-website-link {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  color: rgba(112, 255, 141, 0.86);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  text-decoration: none;
+  text-shadow: 0 1px 6px #000;
+}
+
+.preview-website-link:hover {
+  color: var(--green);
+  text-decoration: underline;
 }
 
 .settings-controls {
@@ -125,23 +142,6 @@ body,
   font-family: "Courier New", monospace;
   font-weight: 700;
   line-height: 1;
-}
-
-.settings-footer {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-  font-family: "Courier New", monospace;
-  font-size: 12px;
-}
-
-.settings-footer a {
-  color: var(--green);
-  text-decoration: none;
-}
-
-.settings-footer a:hover {
-  text-decoration: underline;
 }
 
 @media (max-width: 720px) {

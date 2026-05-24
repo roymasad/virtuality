@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleDot,
   Disc3,
+  Download,
   ExternalLink,
   Grid3X3,
   Orbit,
@@ -21,13 +22,14 @@ import { useEffect, useRef, useState } from "react";
 import screenshotUrl from "../../screenshot.png";
 import type { RenderMode, SceneSettings } from "../engine/types";
 import { originalSourceLines } from "../data/originalData";
-import { findScene, findSceneByKey, scenes } from "../scenes/registry";
+import { findScene, scenes } from "../scenes/registry";
 import { defaultsFor } from "../scenes/settings";
 import { CanvasStage } from "./CanvasStage";
 import { navigate, useHashRoute } from "./useHashRoute";
 import { SettingsPanel } from "./SettingsPanel";
 
 const repoUrl = "https://github.com/roymasad/virtuality";
+const macScreensaverDownloadUrl = "/downloads/Virtuality-macOS-screensaver.zip";
 
 export function App() {
   const route = useHashRoute();
@@ -44,15 +46,6 @@ export function App() {
 }
 
 function Gallery() {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const match = findSceneByKey(event.key);
-      if (match) navigate({ name: "scene", sceneId: match.id });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   return (
     <main className="gallery-page">
       <section className="gallery-hero">
@@ -61,6 +54,12 @@ function Gallery() {
           <p className="eyebrow">QBasic MSDOS archive, circa 1996</p>
           <h1>Virtuality</h1>
           <p>Classic VGA demo scenes and modern remixes in one playable catalog.</p>
+          <div className="hero-actions">
+            <a className="download-cta" href={macScreensaverDownloadUrl} download>
+              <Download size={18} />
+              Download macOS Screen Saver
+            </a>
+          </div>
         </div>
       </section>
 
@@ -153,16 +152,6 @@ function ScenePage({ sceneId }: { sceneId: string }) {
   useEffect(() => {
     setSettings(defaultsFor(scene.settings));
   }, [scene]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const match = findSceneByKey(event.key);
-      if (match) navigate({ name: "scene", sceneId: match.id });
-      if (event.key.toLowerCase() === "m") setMode((current) => (current === "classic" ? "modern" : "classic"));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const shareScene = async () => {
     const url = window.location.href;

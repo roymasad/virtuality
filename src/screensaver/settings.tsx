@@ -27,7 +27,9 @@ declare global {
 
 type SettingsMessage =
   | { type: "save"; config: ScreensaverConfig }
-  | { type: "close" };
+  | { type: "close" }
+  | { type: "openUrl"; url: string }
+  | { type: "ready" };
 
 function SettingsApp() {
   const initialConfig = useMemo(() => normalizeScreensaverConfig(readScreensaverConfig()), []);
@@ -54,6 +56,10 @@ function SettingsApp() {
     postNativeMessage({ type: "save", config: normalizedConfig });
     lastSavedRef.current = serialized;
     setSaved(true);
+  }, []);
+
+  useEffect(() => {
+    postNativeMessage({ type: "ready" });
   }, []);
 
   useEffect(() => {
@@ -95,6 +101,13 @@ function SettingsApp() {
     postNativeMessage({ type: "close" });
   };
 
+  const openWebsite = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (window.webkit?.messageHandlers?.virtualitySettings) {
+      event.preventDefault();
+      postNativeMessage({ type: "openUrl", url: "https://virtuality.roymassaad.com" });
+    }
+  };
+
   return (
     <main className="settings-page">
       <section className="settings-preview" aria-label="Screensaver preview">
@@ -104,6 +117,15 @@ function SettingsApp() {
           settings={settings}
           onExit={() => undefined}
         />
+        <a
+          className="preview-website-link"
+          href="https://virtuality.roymassaad.com"
+          target="_blank"
+          rel="noreferrer"
+          onClick={openWebsite}
+        >
+          virtuality.roymassaad.com
+        </a>
       </section>
 
       <aside className="settings-controls" aria-label="Screensaver settings">
@@ -206,11 +228,6 @@ function SettingsApp() {
             );
           })}
         </div>
-        <footer className="settings-footer">
-          <a href="https://virtuality.roymassaad.com" target="_blank" rel="noreferrer">
-            virtuality.roymassaad.com
-          </a>
-        </footer>
       </aside>
     </main>
   );

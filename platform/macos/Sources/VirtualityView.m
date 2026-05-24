@@ -40,6 +40,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 - (BOOL)sessionScreenIsLocked;
 - (void)scheduleFullscreenIdleTerminationWithReason:(NSString *)reason;
 - (void)cancelFullscreenIdleTerminationWithReason:(NSString *)reason;
+- (NSString *)webViewRole:(WKWebView *)webView;
 
 @end
 
@@ -638,7 +639,14 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
 - (BOOL)hasConfigureSheet
 {
-    [self logMessage:@"hasConfigureSheet -> YES"];
+    [self logMessage:[NSString stringWithFormat:@"hasConfigureSheet -> YES pid=%d preview=%@ window=%@ configureWindow=%@ settingsWebView=%@ mainThread=%@",
+        getpid(),
+        self.previewMode ? @"YES" : @"NO",
+        self.window ? @"YES" : @"NO",
+        self.configureWindow ? @"YES" : @"NO",
+        self.settingsWebView ? @"YES" : @"NO",
+        NSThread.isMainThread ? @"YES" : @"NO"
+    ]];
     return YES;
 }
 
@@ -651,11 +659,18 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
 - (NSWindow *)configureSheet
 {
-    [self logMessage:@"configureSheet"];
+    [self logMessage:[NSString stringWithFormat:@"configureSheet start pid=%d preview=%@ existingWindow=%@ existingSettingsWebView=%@ mainThread=%@",
+        getpid(),
+        self.previewMode ? @"YES" : @"NO",
+        self.configureWindow ? @"YES" : @"NO",
+        self.settingsWebView ? @"YES" : @"NO",
+        NSThread.isMainThread ? @"YES" : @"NO"
+    ]];
     [self stopSettingsWebViewWithReason:@"configureSheet reload"];
     WKWebViewConfiguration *configuration = [self webViewConfigurationWithMessageHandler:YES];
 
     self.settingsWebView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 860, 540) configuration:configuration];
+    self.settingsWebView.navigationDelegate = self;
     self.settingsWebView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.settingsWebView.wantsLayer = YES;
     self.settingsWebView.layer.backgroundColor = NSColor.blackColor.CGColor;
@@ -673,12 +688,18 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     self.configureWindow.minSize = NSMakeSize(720, 480);
 
     [self loadSettingsPage];
+    [self logMessage:[NSString stringWithFormat:@"configureSheet return window=%@ settingsWebView=%@ frame=%@ contentView=%@",
+        self.configureWindow ? @"YES" : @"NO",
+        self.settingsWebView ? @"YES" : @"NO",
+        NSStringFromRect(self.configureWindow.frame),
+        self.configureWindow.contentView ? @"YES" : @"NO"
+    ]];
     return self.configureWindow;
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
 {
-    [self logMessage:@"webView didFinishNavigation"];
+    [self logMessage:[NSString stringWithFormat:@"webView didFinishNavigation role=%@ url=%@", [self webViewRole:webView], webView.URL.absoluteString ?: @"none"]];
     if (webView == self.webView) {
         self.pageLoadInFlight = NO;
     }
@@ -737,7 +758,7 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     if (webView == self.webView) {
         self.pageLoadInFlight = NO;
     }
-    [self logMessage:[NSString stringWithFormat:@"webView didFailNavigation %@", error.localizedDescription]];
+    [self logMessage:[NSString stringWithFormat:@"webView didFailNavigation role=%@ %@", [self webViewRole:webView], error.localizedDescription]];
 }
 
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error
@@ -745,7 +766,27 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
     if (webView == self.webView) {
         self.pageLoadInFlight = NO;
     }
-    [self logMessage:[NSString stringWithFormat:@"webView didFailProvisionalNavigation %@", error.localizedDescription]];
+    [self logMessage:[NSString stringWithFormat:@"webView didFailProvisionalNavigation role=%@ %@", [self webViewRole:webView], error.localizedDescription]];
+}
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
+{
+    NSURL *URL = navigationAction.request.URL;
+    [self logMessage:[NSString stringWithFormat:@"webView decidePolicy role=%@ url=%@ navigationType=%ld targetFrame=%@",
+        [self webViewRole:webView],
+        URL.absoluteString ?: @"none",
+        (long)navigationAction.navigationType,
+        navigationAction.targetFrame ? @"YES" : @"NO"
+    ]];
+
+    if (webView == self.settingsWebView && URL && ([URL.scheme isEqualToString:@"http"] || [URL.scheme isEqualToString:@"https"])) {
+        [self logMessage:[NSString stringWithFormat:@"open external settings url %@", URL.absoluteString]];
+        [NSWorkspace.sharedWorkspace openURL:URL];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+
+    decisionHandler(WKNavigationActionPolicyAllow);
 }
 
 - (WKWebViewConfiguration *)webViewConfigurationWithMessageHandler:(BOOL)includeMessageHandler
@@ -809,8 +850,26 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
 
     if (![message.name isEqualToString:@"virtualitySettings"]) return;
 
+    [self logMessage:[NSString stringWithFormat:@"settings message type=%@ body=%@", type, body]];
+
     if ([type isEqualToString:@"save"] && [body[@"config"] isKindOfClass:NSDictionary.class]) {
         [self saveConfiguration:body[@"config"]];
+    }
+
+    if ([type isEqualToString:@"ready"]) {
+        [self logMessage:[NSString stringWithFormat:@"settings ready configureWindow=%@ settingsWebView=%@ url=%@",
+            self.configureWindow ? @"YES" : @"NO",
+            self.settingsWebView ? @"YES" : @"NO",
+            self.settingsWebView.URL.absoluteString ?: @"none"
+        ]];
+    }
+
+    if ([type isEqualToString:@"openUrl"] && [body[@"url"] isKindOfClass:NSString.class]) {
+        NSURL *url = [NSURL URLWithString:body[@"url"]];
+        [self logMessage:[NSString stringWithFormat:@"settings openUrl %@", url.absoluteString ?: @"invalid"]];
+        if (url && ([url.scheme isEqualToString:@"http"] || [url.scheme isEqualToString:@"https"])) {
+            [NSWorkspace.sharedWorkspace openURL:url];
+        }
     }
 
     if ([type isEqualToString:@"close"]) {
@@ -820,6 +879,13 @@ static __weak VirtualityView *VirtualityActiveFullscreenView = nil;
         self.configureWindow.delegate = nil;
         self.configureWindow = nil;
     }
+}
+
+- (NSString *)webViewRole:(WKWebView *)webView
+{
+    if (webView == self.webView) return @"screensaver";
+    if (webView == self.settingsWebView) return @"settings";
+    return @"unknown";
 }
 
 - (void)windowWillClose:(NSNotification *)notification
