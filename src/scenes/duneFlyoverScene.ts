@@ -121,13 +121,18 @@ export class DuneFlyoverScene implements ThreeScene {
     this.renderer?.dispose();
     this.renderer = null;
     this.resetScene();
-    this.renderer = new THREE.WebGLRenderer({
+    const rendererOptions: THREE.WebGLRendererParameters = {
       canvas,
       antialias: true,
       alpha: false,
       powerPreference: "high-performance",
       preserveDrawingBuffer: Boolean(ctx.nativeFrameBridge),
-    });
+    };
+    const webglContext = this.createRendererContext(canvas, rendererOptions);
+    if (webglContext) {
+      rendererOptions.context = webglContext;
+    }
+    this.renderer = new THREE.WebGLRenderer(rendererOptions);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x000000, 1);
@@ -256,6 +261,33 @@ export class DuneFlyoverScene implements ThreeScene {
       material?.dispose?.();
     });
     this.ruins.clear();
+  }
+
+  private createRendererContext(canvas: HTMLCanvasElement, options: THREE.WebGLRendererParameters) {
+    const attributes: WebGLContextAttributes = {
+      alpha: Boolean(options.alpha),
+      antialias: Boolean(options.antialias),
+      powerPreference: options.powerPreference,
+      preserveDrawingBuffer: Boolean(options.preserveDrawingBuffer),
+    };
+    const context = canvas.getContext("webgl2", attributes) as WebGL2RenderingContext | null;
+    if (!context) return null;
+
+    const precisionFallback: WebGLShaderPrecisionFormat = {
+      rangeMin: 127,
+      rangeMax: 127,
+      precision: 23,
+    };
+    const getShaderPrecisionFormat = context.getShaderPrecisionFormat.bind(context);
+    try {
+      context.getShaderPrecisionFormat = (shaderType, precisionType) => (
+        getShaderPrecisionFormat(shaderType, precisionType) ?? precisionFallback
+      );
+    } catch {
+      return context;
+    }
+
+    return context;
   }
 
   private ensureTerrain(ctx: ThreeSceneContext, palette: DunePalette) {

@@ -152,21 +152,24 @@ export function ThreeStage({ scene, mode, settings, onExit, onSceneAction, nativ
     sampleCanvas.width = 48;
     sampleCanvas.height = 30;
     const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+    let lastSampleNonBlack = 0;
+    let lastSampleTotal = 0;
 
     const renderFrameForNative = () => {
       renderFrame(performance.now());
       const rect = canvas.getBoundingClientRect();
-      let sampleNonBlack = 0;
-      let sampleTotal = 0;
+      const shouldSample = frame <= 3 || frame % 60 === 0;
 
-      if (sampleContext) {
+      if (sampleContext && shouldSample) {
         sampleContext.clearRect(0, 0, sampleCanvas.width, sampleCanvas.height);
         sampleContext.drawImage(canvas, 0, 0, sampleCanvas.width, sampleCanvas.height);
         const image = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+        lastSampleNonBlack = 0;
+        lastSampleTotal = 0;
         for (let index = 0; index < image.data.length; index += 4) {
-          sampleTotal += 1;
+          lastSampleTotal += 1;
           if (image.data[index] || image.data[index + 1] || image.data[index + 2]) {
-            sampleNonBlack += 1;
+            lastSampleNonBlack += 1;
           }
         }
       }
@@ -179,8 +182,8 @@ export function ThreeStage({ scene, mode, settings, onExit, onSceneAction, nativ
         cssHeight: Math.round(rect.height),
         pixelRatio: nativeHost || nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
         frame,
-        sampleNonBlack,
-        sampleTotal,
+        sampleNonBlack: lastSampleNonBlack,
+        sampleTotal: lastSampleTotal,
         dataURL: canvas.toDataURL("image/png"),
       };
     };

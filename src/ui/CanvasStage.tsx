@@ -193,19 +193,26 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
       raf = requestAnimationFrame(loop);
     };
 
+    let lastSampleNonBlack = 0;
+    let lastSampleTotal = 0;
+
     const renderFrameForNative = () => {
       updateSize();
       renderFrame(performance.now());
       const rect = canvas.getBoundingClientRect();
-      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const stride = Math.max(4, Math.floor((canvas.width * canvas.height) / 1200) * 4);
-      let sampleNonBlack = 0;
-      let sampleTotal = 0;
+      const shouldSample = frame <= 3 || frame % 60 === 0;
 
-      for (let index = 0; index < image.data.length; index += stride) {
-        sampleTotal += 1;
-        if (image.data[index] || image.data[index + 1] || image.data[index + 2]) {
-          sampleNonBlack += 1;
+      if (shouldSample) {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const stride = Math.max(4, Math.floor((canvas.width * canvas.height) / 1200) * 4);
+        lastSampleNonBlack = 0;
+        lastSampleTotal = 0;
+
+        for (let index = 0; index < image.data.length; index += stride) {
+          lastSampleTotal += 1;
+          if (image.data[index] || image.data[index + 1] || image.data[index + 2]) {
+            lastSampleNonBlack += 1;
+          }
         }
       }
 
@@ -217,8 +224,8 @@ export function CanvasStage({ scene, mode, settings, onExit, onSceneAction, nati
         cssHeight: Math.round(rect.height),
         pixelRatio: nativeHost || nativeFrameBridge ? 1 : window.devicePixelRatio || 1,
         frame,
-        sampleNonBlack,
-        sampleTotal,
+        sampleNonBlack: lastSampleNonBlack,
+        sampleTotal: lastSampleTotal,
         dataURL: canvas.toDataURL("image/png"),
       };
     };
